@@ -232,6 +232,19 @@ void FlutterScreenCapture::GetDisplayMedia(
     }
   }
 
+  // If source not found, rebuild the list and try again
+  if (!source.get()) {
+    EncodableList types;
+    types.push_back(EncodableValue(std::string("screen")));
+    BuildDesktopSourcesList(types, true);
+    for (auto src : sources_) {
+      if (source_id == "0" || src->id().std_string() == source_id) {
+        source = src;
+        break;
+      }
+    }
+  }
+
   if (!source.get()) {
     result->Error("Bad Arguments", "source not found!");
     return;
