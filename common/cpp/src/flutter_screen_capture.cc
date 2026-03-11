@@ -6,7 +6,6 @@
 #include <thread>
 #include <iostream>
 
-
 namespace flutter_webrtc_plugin {
 
 FlutterScreenCapture::FlutterScreenCapture(FlutterWebRTCBase* base)
@@ -24,9 +23,8 @@ void FlutterScreenCapture::StopAudioCapture() {
   screen_audio_source_ = nullptr;
 }
 
-
 bool FlutterScreenCapture::BuildDesktopSourcesList(const EncodableList& types,
-                                                   bool force_reload) {
+                                                    bool force_reload) {
   size_t size = types.size();
   sources_.clear();
   for (size_t i = 0; i < size; i++) {
@@ -37,7 +35,6 @@ bool FlutterScreenCapture::BuildDesktopSourcesList(const EncodableList& types,
     } else if (type_str == "window") {
       desktop_type = DesktopType::kWindow;
     } else {
-      // std::cout << "Unknown type " << type_str << std::endl;
       return false;
     }
     scoped_refptr<RTCDesktopMediaList> source_list;
@@ -73,7 +70,6 @@ void FlutterScreenCapture::GetDesktopSources(
     info[EncodableValue("name")] = EncodableValue(source->name().std_string());
     info[EncodableValue("type")] =
         EncodableValue(source->type() == kWindow ? "window" : "screen");
-    // TODO "thumbnailSize"
     info[EncodableValue("thumbnailSize")] = EncodableMap{
         {EncodableValue("width"), EncodableValue(0)},
         {EncodableValue("height"), EncodableValue(0)},
@@ -110,7 +106,6 @@ void FlutterScreenCapture::OnMediaSourceAdded(
   info[EncodableValue("name")] = EncodableValue(source->name().std_string());
   info[EncodableValue("type")] =
       EncodableValue(source->type() == kWindow ? "window" : "screen");
-  // TODO "thumbnailSize"
   info[EncodableValue("thumbnailSize")] = EncodableMap{
       {EncodableValue("width"), EncodableValue(0)},
       {EncodableValue("height"), EncodableValue(0)},
@@ -155,24 +150,16 @@ void FlutterScreenCapture::OnMediaSourceThumbnailChanged(
 }
 
 void FlutterScreenCapture::OnStart(scoped_refptr<RTCDesktopCapturer> capturer) {
-  // std::cout << " OnStart: " << capturer->source()->id().std_string()
-  //          << std::endl;
 }
 
 void FlutterScreenCapture::OnPaused(
     scoped_refptr<RTCDesktopCapturer> capturer) {
-  // std::cout << " OnPaused: " << capturer->source()->id().std_string()
-  //          << std::endl;
 }
 
 void FlutterScreenCapture::OnStop(scoped_refptr<RTCDesktopCapturer> capturer) {
-  // std::cout << " OnStop: " << capturer->source()->id().std_string()
-  //          << std::endl;
 }
 
 void FlutterScreenCapture::OnError(scoped_refptr<RTCDesktopCapturer> capturer) {
-  // std::cout << " OnError: " << capturer->source()->id().std_string()
-  //          << std::endl;
 }
 
 void FlutterScreenCapture::GetDesktopSourceThumbnail(
@@ -200,7 +187,6 @@ void FlutterScreenCapture::GetDisplayMedia(
     const EncodableMap& constraints,
     std::unique_ptr<MethodResultProxy> result) {
   std::string source_id = "0";
-  // DesktopType source_type = kScreen;
   double fps = 30.0;
 
   const EncodableMap video = findMap(constraints, "video");
@@ -211,9 +197,6 @@ void FlutterScreenCapture::GetDisplayMedia(
       if (source_id.empty()) {
         result->Error("Bad Arguments", "Incorrect video->deviceId->exact");
         return;
-      }
-      if (source_id != "0") {
-        // source_type = DesktopType::kWindow;
       }
     }
     const EncodableMap mandatory = findMap(video, "mandatory");
@@ -247,7 +230,7 @@ void FlutterScreenCapture::GetDisplayMedia(
     // Stop any previous capture
     StopAudioCapture();
 
-    // Create a custom audio source — we feed frames manually, not from mic
+    // Create a custom audio source — we feed frames manually via PulseAudio
     screen_audio_source_ = base_->factory_->CreateAudioSource(
         "screen_audio", RTCAudioSource::SourceType::kCustom);
 
@@ -279,7 +262,8 @@ void FlutterScreenCapture::GetDisplayMedia(
       const int channels = 1;
       const int bits_per_sample = 16;
       const size_t frames_per_buffer = sample_rate / 100;  // 10ms
-      const size_t buffer_bytes = frames_per_buffer * channels * (bits_per_sample / 8);
+      const size_t buffer_bytes =
+          frames_per_buffer * channels * (bits_per_sample / 8);
 
       pa_sample_spec spec;
       spec.format = PA_SAMPLE_S16LE;
@@ -309,15 +293,16 @@ void FlutterScreenCapture::GetDisplayMedia(
                     << pa_strerror(pa_error) << std::endl;
           break;
         }
-        source_ref->CaptureFrame(
-            buffer.data(), bits_per_sample, sample_rate, channels, frames_per_buffer);
+        source_ref->CaptureFrame(buffer.data(), bits_per_sample, sample_rate,
+                                  channels, frames_per_buffer);
       }
 
       pa_simple_free(pa);
     });
   }
-  // VIDEO
+  params[EncodableValue("audioTracks")] = EncodableValue(audioTracks);
 
+  // VIDEO
   EncodableMap video_constraints;
   auto it = constraints.find(EncodableValue("video"));
   if (it != constraints.end() && TypeIs<EncodableMap>(it->second)) {
@@ -365,8 +350,6 @@ void FlutterScreenCapture::GetDisplayMedia(
       base_->factory_->CreateDesktopSource(
           desktop_capturer, video_source_label,
           base_->ParseMediaConstraints(video_constraints));
-
-  // TODO: RTCVideoSource -> RTCVideoTrack
 
   scoped_refptr<RTCVideoTrack> track =
       base_->factory_->CreateVideoTrack(video_source, uuid.c_str());
