@@ -214,39 +214,37 @@ void FlutterScreenCapture::GetDisplayMedia(
   params[EncodableValue("streamId")] = EncodableValue(uuid);
 
   // AUDIO
+  EncodableList audioTracks;
+  auto audio_it = constraints.find(EncodableValue("audio"));
+  bool enable_audio = false;
+  if (audio_it != constraints.end()) {
+    if (TypeIs<bool>(audio_it->second)) {
+      enable_audio = GetValue<bool>(audio_it->second);
+    }
+  }
 
-   // AUDIO
- EncodableList audioTracks;
- auto audio_it = constraints.find(EncodableValue("audio"));
- bool enable_audio = false;
- if (audio_it != constraints.end()) {
-   if (TypeIs<bool>(audio_it->second)) {
-     enable_audio = GetValue<bool>(audio_it->second);
-   }
- }
+  if (enable_audio) {
+    scoped_refptr<RTCAudioSource> audio_source =
+        base_->factory_->CreateAudioSource("screen_audio_input");
+    std::string audio_uuid = base_->GenerateUUID();
+    scoped_refptr<RTCAudioTrack> audio_track =
+        base_->factory_->CreateAudioTrack(audio_source, audio_uuid.c_str());
 
- if (enable_audio) {
-   scoped_refptr<RTCAudioSource> audio_source =
-       base_->factory_->CreateAudioSource("screen_audio_input");
-   std::string audio_uuid = base_->GenerateUUID();
-   scoped_refptr<RTCAudioTrack> audio_track =
-       base_->factory_->CreateAudioTrack(audio_source, audio_uuid.c_str());
+    EncodableMap audio_info;
+    audio_info[EncodableValue("id")] =
+        EncodableValue(audio_track->id().std_string());
+    audio_info[EncodableValue("label")] =
+        EncodableValue(audio_track->id().std_string());
+    audio_info[EncodableValue("kind")] =
+        EncodableValue(audio_track->kind().std_string());
+    audio_info[EncodableValue("enabled")] =
+        EncodableValue(audio_track->enabled());
+    audioTracks.push_back(EncodableValue(audio_info));
 
-   EncodableMap audio_info;
-   audio_info[EncodableValue("id")] =
-       EncodableValue(audio_track->id().std_string());
-   audio_info[EncodableValue("label")] =
-       EncodableValue(audio_track->id().std_string());
-   audio_info[EncodableValue("kind")] =
-       EncodableValue(audio_track->kind().std_string());
-   audio_info[EncodableValue("enabled")] =
-       EncodableValue(audio_track->enabled());
-   audioTracks.push_back(EncodableValue(audio_info));
-
-   stream->AddTrack(audio_track);
-   base_->local_tracks_[audio_track->id().std_string()] = audio_track;
- }
- params[EncodableValue("audioTracks")] = EncodableValue(audioTracks);
+    stream->AddTrack(audio_track);
+    base_->local_tracks_[audio_track->id().std_string()] = audio_track;
+  }
+  params[EncodableValue("audioTracks")] = EncodableValue(audioTracks);
 
 
   // VIDEO
