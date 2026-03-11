@@ -12,6 +12,8 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/../third_party/CMakeLists.txt")
 set(PLUGIN_NAME "${PROJECT_NAME}_plugin")
 set (CMAKE_EXPORT_COMPILE_COMMANDS ON )
 set(CMAKE_CXX_STANDARD 17)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(PULSE REQUIRED libpulse-simple)
 
 add_definitions(-DRTC_DESKTOP_DEVICE)
 
@@ -50,6 +52,10 @@ target_include_directories(${PLUGIN_NAME} INTERFACE
   "${CMAKE_CURRENT_SOURCE_DIR}/../common/cpp/include"
   "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/libwebrtc/include"
 )
+target_include_directories(${PLUGIN_NAME} PRIVATE ${PULSE_INCLUDE_DIRS})
+target_link_libraries(${PLUGIN_NAME} PRIVATE ${PULSE_LIBRARIES})
+
+
 target_link_libraries(${PLUGIN_NAME} PRIVATE flutter)
 target_link_libraries(${PLUGIN_NAME} PRIVATE PkgConfig::GTK)
 

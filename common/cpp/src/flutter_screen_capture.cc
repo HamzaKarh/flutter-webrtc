@@ -1,9 +1,29 @@
 #include "flutter_screen_capture.h"
 
+#include <pulse/simple.h>
+#include <pulse/error.h>
+#include <atomic>
+#include <thread>
+#include <iostream>
+
+
 namespace flutter_webrtc_plugin {
 
 FlutterScreenCapture::FlutterScreenCapture(FlutterWebRTCBase* base)
     : base_(base) {}
+
+FlutterScreenCapture::~FlutterScreenCapture() {
+  StopAudioCapture();
+}
+
+void FlutterScreenCapture::StopAudioCapture() {
+  audio_capturing_ = false;
+  if (audio_thread_.joinable()) {
+    audio_thread_.join();
+  }
+  screen_audio_source_ = nullptr;
+}
+
 
 bool FlutterScreenCapture::BuildDesktopSourcesList(const EncodableList& types,
                                                    bool force_reload) {
@@ -224,11 +244,16 @@ void FlutterScreenCapture::GetDisplayMedia(
   }
 
   if (enable_audio) {
-    scoped_refptr<RTCAudioSource> audio_source =
-        base_->factory_->CreateAudioSource("screen_audio_input");
+    // Stop any previous capture
+    StopAudioCapture();
+
+    // Create a custom audio source — we feed frames manually, not from mic
+    screen_audio_source_ = base_->factory_->CreateAudioSource(
+        "screen_audio", RTCAudioSource::SourceType::kCustom);
+
     std::string audio_uuid = base_->GenerateUUID();
     scoped_refptr<RTCAudioTrack> audio_track =
-        base_->factory_->CreateAudioTrack(audio_source, audio_uuid.c_str());
+        base_->factory_->CreateAudioTrack(screen_audio_source_, audio_uuid.c_str());
 
     EncodableMap audio_info;
     audio_info[EncodableValue("id")] =
@@ -243,10 +268,54 @@ void FlutterScreenCapture::GetDisplayMedia(
 
     stream->AddTrack(audio_track);
     base_->local_tracks_[audio_track->id().std_string()] = audio_track;
+
+    // Start PulseAudio monitor capture thread
+    audio_capturing_ = true;
+    scoped_refptr<RTCAudioSource> source_ref = screen_audio_source_;
+    std::atomic<bool>* capturing_flag = &audio_capturing_;
+
+    audio_thread_ = std::thread([source_ref, capturing_flag]() {
+      const int sample_rate = 48000;
+      const int channels = 1;
+      const int bits_per_sample = 16;
+      const size_t frames_per_buffer = sample_rate / 100;  // 10ms
+      const size_t buffer_bytes = frames_per_buffer * channels * (bits_per_sample / 8);
+
+      pa_sample_spec spec;
+      spec.format = PA_SAMPLE_S16LE;
+      spec.rate = sample_rate;
+      spec.channels = channels;
+
+      int pa_error;
+      pa_simple* pa = pa_simple_new(
+          nullptr,              // default server
+          "havok-screenshare",  // app name
+          PA_STREAM_RECORD,
+          "@DEFAULT_MONITOR@",  // capture desktop audio output
+          "screen-audio",       // stream description
+          &spec, nullptr, nullptr, &pa_error);
+
+      if (!pa) {
+        std::cerr << "PulseAudio monitor open failed: "
+                  << pa_strerror(pa_error) << std::endl;
+        return;
+      }
+
+      std::vector<int16_t> buffer(frames_per_buffer * channels);
+
+      while (capturing_flag->load()) {
+        if (pa_simple_read(pa, buffer.data(), buffer_bytes, &pa_error) < 0) {
+          std::cerr << "PulseAudio read failed: "
+                    << pa_strerror(pa_error) << std::endl;
+          break;
+        }
+        source_ref->CaptureFrame(
+            buffer.data(), bits_per_sample, sample_rate, channels, frames_per_buffer);
+      }
+
+      pa_simple_free(pa);
+    });
   }
-  params[EncodableValue("audioTracks")] = EncodableValue(audioTracks);
-
-
   // VIDEO
 
   EncodableMap video_constraints;

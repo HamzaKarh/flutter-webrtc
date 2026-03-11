@@ -7,12 +7,17 @@
 #include "rtc_desktop_capturer.h"
 #include "rtc_desktop_media_list.h"
 
+#include <atomic>
+#include <thread>
+
 namespace flutter_webrtc_plugin {
 
 class FlutterScreenCapture : public MediaListObserver,
-                             public DesktopCapturerObserver {
+                            public DesktopCapturerObserver {
  public:
-  FlutterScreenCapture(FlutterWebRTCBase* base);
+ FlutterScreenCapture(FlutterWebRTCBase* base);
+ ~FlutterScreenCapture();
+
 
   void GetDisplayMedia(const EncodableMap& constraints,
                        std::unique_ptr<MethodResultProxy> result);
@@ -50,9 +55,18 @@ class FlutterScreenCapture : public MediaListObserver,
   bool BuildDesktopSourcesList(const EncodableList& types, bool force_reload);
 
  private:
-  FlutterWebRTCBase* base_;
-  std::map<DesktopType, scoped_refptr<RTCDesktopMediaList>> medialist_;
-  std::vector<scoped_refptr<MediaSource>> sources_;
+ bool BuildDesktopSourcesList(const EncodableList& types, bool force_reload);
+ void StopAudioCapture();
+ 
+ private:
+ FlutterWebRTCBase* base_;
+ std::map<DesktopType, scoped_refptr<RTCDesktopMediaList>> medialist_;
+ std::vector<scoped_refptr<MediaSource>> sources_;
+ 
+ // PulseAudio monitor capture
+ std::atomic<bool> audio_capturing_{false};
+ std::thread audio_thread_;
+ scoped_refptr<RTCAudioSource> screen_audio_source_;
 };
 
 }  // namespace flutter_webrtc_plugin
