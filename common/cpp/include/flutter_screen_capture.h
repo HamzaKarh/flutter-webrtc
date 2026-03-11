@@ -51,22 +51,19 @@ class FlutterScreenCapture : public MediaListObserver,
 
   void OnError(scoped_refptr<RTCDesktopCapturer> capturer) override;
 
- private:
+  private:
   bool BuildDesktopSourcesList(const EncodableList& types, bool force_reload);
-
- private:
- bool BuildDesktopSourcesList(const EncodableList& types, bool force_reload);
- void StopAudioCapture();
- 
- private:
- FlutterWebRTCBase* base_;
- std::map<DesktopType, scoped_refptr<RTCDesktopMediaList>> medialist_;
- std::vector<scoped_refptr<MediaSource>> sources_;
- 
- // PulseAudio monitor capture
- std::atomic<bool> audio_capturing_{false};
- std::thread audio_thread_;
- scoped_refptr<RTCAudioSource> screen_audio_source_;
+  void StopAudioCapture();
+  
+  private:
+  FlutterWebRTCBase* base_;
+  std::map<DesktopType, scoped_refptr<RTCDesktopMediaList>> medialist_;
+  std::vector<scoped_refptr<MediaSource>> sources_;
+  
+  // PulseAudio monitor capture
+  std::atomic<bool> audio_capturing_{false};
+  std::thread audio_thread_;
+  scoped_refptr<RTCAudioSource> screen_audio_source_;
 };
 
 }  // namespace flutter_webrtc_plugin
