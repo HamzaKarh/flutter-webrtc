@@ -227,7 +227,7 @@ size_t WasapiLoopbackCapturer::ReadFrames(int16_t* buffer,
     // Wait for data with a 20ms timeout.
     // If no system audio is playing, WASAPI loopback produces no packets,
     // so we inject silence after the timeout to maintain cadence.
-    DWORD wait_result = WaitForSingleObject(audio_event_, 20);
+    WaitForSingleObject(audio_event_, 20);
 
     if (!started_) return 0;  // Stopped while waiting.
 
