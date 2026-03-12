@@ -15,12 +15,12 @@ FlutterScreenCapture::~FlutterScreenCapture() {
 }
 
 void FlutterScreenCapture::StopAudioCapture() {
-  audio_capturing_ = false;
-  if (audio_capturer_) {
-    audio_capturer_->Stop();
-  }
+  audio_capturing_ = false;           // 1. Signal thread to stop
   if (audio_thread_.joinable()) {
-    audio_thread_.join();
+    audio_thread_.join();              // 2. Wait for thread to exit (≤10ms)
+  }
+  if (audio_capturer_) {
+    audio_capturer_->Stop();           // 3. NOW safe to free resources
   }
   audio_capturer_.reset();
   screen_audio_source_ = nullptr;
@@ -219,8 +219,7 @@ void FlutterScreenCapture::GetDisplayMedia(
   EncodableMap params;
   params[EncodableValue("streamId")] = EncodableValue(uuid);
 
-  // AUDIO
-  EncodableList audioTracks;
+  // Check if audio is requested
   auto audio_it = constraints.find(EncodableValue("audio"));
   bool enable_audio = false;
   if (audio_it != constraints.end()) {
@@ -229,67 +228,7 @@ void FlutterScreenCapture::GetDisplayMedia(
     }
   }
 
-  if (enable_audio) {
-    // Stop any previous capture
-    StopAudioCapture();
-
-    // Create the platform-specific system audio capturer.
-    audio_capturer_ = SystemAudioCapturer::Create();
-    if (!audio_capturer_ || !audio_capturer_->Start()) {
-      std::cerr << "System audio capture not available on this platform"
-                << std::endl;
-      audio_capturer_.reset();
-    } else {
-      // Create a custom audio source — we feed frames from the capturer.
-      screen_audio_source_ = base_->factory_->CreateAudioSource(
-          "screen_audio", RTCAudioSource::SourceType::kCustom);
-
-      std::string audio_uuid = base_->GenerateUUID();
-      scoped_refptr<RTCAudioTrack> audio_track =
-          base_->factory_->CreateAudioTrack(screen_audio_source_,
-                                            audio_uuid.c_str());
-
-      EncodableMap audio_info;
-      audio_info[EncodableValue("id")] =
-          EncodableValue(audio_track->id().std_string());
-      audio_info[EncodableValue("label")] =
-          EncodableValue(audio_track->id().std_string());
-      audio_info[EncodableValue("kind")] =
-          EncodableValue(audio_track->kind().std_string());
-      audio_info[EncodableValue("enabled")] =
-          EncodableValue(audio_track->enabled());
-      audioTracks.push_back(EncodableValue(audio_info));
-
-      stream->AddTrack(audio_track);
-      base_->local_tracks_[audio_track->id().std_string()] = audio_track;
-
-      // Start the capture thread.
-      audio_capturing_ = true;
-      scoped_refptr<RTCAudioSource> source_ref = screen_audio_source_;
-      std::atomic<bool>* capturing_flag = &audio_capturing_;
-      SystemAudioCapturer* capturer = audio_capturer_.get();
-
-      audio_thread_ = std::thread(
-          [source_ref, capturing_flag, capturer]() {
-            const size_t frames_per_buffer =
-                capturer->sample_rate() / 100;  // 10ms
-            std::vector<int16_t> buffer(frames_per_buffer *
-                                        capturer->channels());
-
-            while (capturing_flag->load()) {
-              size_t read =
-                  capturer->ReadFrames(buffer.data(), frames_per_buffer);
-              if (read == 0) break;
-              source_ref->CaptureFrame(
-                  buffer.data(), capturer->bits_per_sample(),
-                  capturer->sample_rate(), capturer->channels(), read);
-            }
-          });
-    }
-  }
-  params[EncodableValue("audioTracks")] = EncodableValue(audioTracks);
-
-  // VIDEO
+  // VIDEO — start first so video frames flow before audio
   EncodableMap video_constraints;
   auto it = constraints.find(EncodableValue("video"));
   if (it != constraints.end() && TypeIs<EncodableMap>(it->second)) {
@@ -351,12 +290,83 @@ void FlutterScreenCapture::GetDisplayMedia(
   params[EncodableValue("videoTracks")] = EncodableValue(videoTracks);
 
   stream->AddTrack(track);
-
   base_->local_tracks_[track->id().std_string()] = track;
-
   base_->local_streams_[uuid] = stream;
 
+  // Start video capture — frames begin flowing NOW
   desktop_capturer->Start(uint32_t(fps));
+
+  // AUDIO — start AFTER video so both streams begin at roughly the same time
+  EncodableList audioTracks;
+
+  if (enable_audio) {
+    // Stop any previous capture
+    StopAudioCapture();
+
+    // Create the platform-specific system audio capturer.
+    audio_capturer_ = SystemAudioCapturer::Create();
+    if (!audio_capturer_ || !audio_capturer_->Start()) {
+      std::cerr << "System audio capture not available on this platform"
+                << std::endl;
+      audio_capturer_.reset();
+    } else {
+      // Create a custom audio source — we feed frames from the capturer.
+      screen_audio_source_ = base_->factory_->CreateAudioSource(
+          "screen_audio", RTCAudioSource::SourceType::kCustom);
+
+      std::string audio_uuid = base_->GenerateUUID();
+      scoped_refptr<RTCAudioTrack> audio_track =
+          base_->factory_->CreateAudioTrack(screen_audio_source_,
+                                            audio_uuid.c_str());
+
+      EncodableMap audio_info;
+      audio_info[EncodableValue("id")] =
+          EncodableValue(audio_track->id().std_string());
+      audio_info[EncodableValue("label")] =
+          EncodableValue(audio_track->id().std_string());
+      audio_info[EncodableValue("kind")] =
+          EncodableValue(audio_track->kind().std_string());
+      audio_info[EncodableValue("enabled")] =
+          EncodableValue(audio_track->enabled());
+      audioTracks.push_back(EncodableValue(audio_info));
+
+      stream->AddTrack(audio_track);
+      base_->local_tracks_[audio_track->id().std_string()] = audio_track;
+
+      // Start the capture thread.
+      audio_capturing_ = true;
+      scoped_refptr<RTCAudioSource> source_ref = screen_audio_source_;
+      std::atomic<bool>* capturing_flag = &audio_capturing_;
+      SystemAudioCapturer* capturer = audio_capturer_.get();
+
+      audio_thread_ = std::thread(
+          [source_ref, capturing_flag, capturer]() {
+            const size_t frames_per_buffer =
+                capturer->sample_rate() / 100;  // 10ms
+            std::vector<int16_t> buffer(frames_per_buffer *
+                                        capturer->channels());
+
+            // Drain stale audio that PulseAudio/WASAPI buffered before we
+            // were ready.  Discard up to 500ms (50 × 10ms frames).
+            for (int i = 0; i < 50 && capturing_flag->load(); i++) {
+              size_t read =
+                  capturer->ReadFrames(buffer.data(), frames_per_buffer);
+              if (read == 0) break;
+            }
+
+            // Main capture loop — now in sync with video
+            while (capturing_flag->load()) {
+              size_t read =
+                  capturer->ReadFrames(buffer.data(), frames_per_buffer);
+              if (read == 0) break;
+              source_ref->CaptureFrame(
+                  buffer.data(), capturer->bits_per_sample(),
+                  capturer->sample_rate(), capturer->channels(), read);
+            }
+          });
+    }
+  }
+  params[EncodableValue("audioTracks")] = EncodableValue(audioTracks);
 
   result->Success(EncodableValue(params));
 }
