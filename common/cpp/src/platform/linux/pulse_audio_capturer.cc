@@ -19,6 +19,14 @@ bool PulseAudioCapturer::Start() {
   spec.rate = sample_rate();
   spec.channels = channels();
 
+  // Request small fragments to minimize capture latency (~10ms).
+  pa_buffer_attr attr;
+  attr.maxlength = (uint32_t)-1;
+  attr.tlength = (uint32_t)-1;
+  attr.prebuf = (uint32_t)-1;
+  attr.minreq = (uint32_t)-1;
+  attr.fragsize = 960;  // 10ms at 48kHz mono 16-bit
+
   int pa_error;
   pa_ = pa_simple_new(
       nullptr,              // default server
@@ -26,7 +34,7 @@ bool PulseAudioCapturer::Start() {
       PA_STREAM_RECORD,
       "@DEFAULT_MONITOR@",  // capture desktop audio output
       "screen-audio",       // stream description
-      &spec, nullptr, nullptr, &pa_error);
+      &spec, nullptr, &attr, &pa_error);
 
   if (!pa_) {
     std::cerr << "PulseAudio monitor open failed: "
