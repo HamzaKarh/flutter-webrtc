@@ -28,6 +28,8 @@ add_library(${PLUGIN_NAME} SHARED
   "../common/cpp/src/flutter_webrtc.cc"
   "../common/cpp/src/flutter_webrtc_base.cc"
   "../common/cpp/src/flutter_common.cc"
+  "../common/cpp/src/system_audio_capturer.cc"
+  "../common/cpp/src/platform/linux/pulse_audio_capturer.cc"
   "flutter_webrtc_plugin.cc"
   "flutter/core_implementations.cc"
   "flutter/standard_codec.cc"
@@ -39,6 +41,7 @@ include_directories(
   "${CMAKE_CURRENT_SOURCE_DIR}"
   "${CMAKE_CURRENT_SOURCE_DIR}/flutter/include"
   "${CMAKE_CURRENT_SOURCE_DIR}/../common/cpp/include"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../common/cpp/src"
   "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/libwebrtc/include"
   "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/svpng"
 )

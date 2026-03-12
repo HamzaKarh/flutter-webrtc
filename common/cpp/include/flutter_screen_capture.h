@@ -3,11 +3,13 @@
 
 #include "flutter_common.h"
 #include "flutter_webrtc_base.h"
+#include "system_audio_capturer.h"
 
 #include "rtc_desktop_capturer.h"
 #include "rtc_desktop_media_list.h"
 
 #include <atomic>
+#include <memory>
 #include <thread>
 
 namespace flutter_webrtc_plugin {
@@ -60,10 +62,11 @@ class FlutterScreenCapture : public MediaListObserver,
   std::map<DesktopType, scoped_refptr<RTCDesktopMediaList>> medialist_;
   std::vector<scoped_refptr<MediaSource>> sources_;
   
-  // PulseAudio monitor capture
+  // System audio capture (platform-abstracted)
   std::atomic<bool> audio_capturing_{false};
   std::thread audio_thread_;
   scoped_refptr<RTCAudioSource> screen_audio_source_;
+  std::unique_ptr<SystemAudioCapturer> audio_capturer_;
 };
 
 }  // namespace flutter_webrtc_plugin
